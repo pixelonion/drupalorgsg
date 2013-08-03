@@ -1,0 +1,37 @@
+<?php
+/**
+ * @file
+ * Installation and update hooks for the Commerce Ad Hoc Payment module.
+ */
+
+/**
+ * Implements hook_update_N().
+ *
+ * Update the message for existing commerce ad hoc payment transactions to match
+ * the new format.
+ */
+function commerce_adhoc_payment_update_7101() {
+  // Includes the forms file so that we can use
+  // _commerce_adhoc_payment_transaction_message().
+  module_load_include('inc', 'commerce_adhoc_payment', 'includes/commerce_adhoc_payment.forms');
+
+  // Search for any existing ad hoc payment methods that need updated.
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'commerce_payment_transaction')
+    ->propertyCondition('payment_method', 'adhoc');
+  $results = $query->execute();
+
+  // Iterate over the transactions, attempting to update each one.
+  $transactions = (isset($results['commerce_payment_transaction']) ? $results['commerce_payment_transaction'] : array());
+  foreach (commerce_payment_transaction_load_multiple(array_keys($transactions)) as $transaction) {
+    // If we are able to get the comment from the existing message then build
+    // a new message and update the transaction.
+    if (preg_match('/<b>Comment:<\/b> (.*$)/', $transaction->message, $matches)) {
+      $values = $transaction->data;
+      $values['comment'] = $matches[1];
+
+      $transaction->message = _commerce_adhoc_payment_transaction_message($values);
+      commerce_payment_transaction_save($transaction);
+    }
+  }
+}

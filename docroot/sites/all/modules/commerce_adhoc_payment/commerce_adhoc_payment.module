@@ -1,0 +1,105 @@
+<?php
+/**
+ * @file
+ * Implements ad hoc payments for use with Drupal Commerce.
+ */
+
+/**
+ * Implements hook_hook_info().
+ */
+function commerce_adhoc_payment_hook_info() {
+  return array(
+    'commerce_adhoc_payment_method_form_alter' => array(
+      'group' => 'commerce',
+    ),
+    'commerce_adhoc_payment_methods' => array(
+      'group' => 'commerce',
+    ),
+    'commerce_adhoc_payment_methods_alter' => array(
+      'group' => 'commerce',
+    ),
+    'commerce_adhoc_payment_transaction_message_alter' => array(
+      'group' => 'commerce',
+    ),
+  );
+}
+
+/**
+ * Implements hook_modules_enabled().
+ *
+ * Clears the payment method cache in case ony of the modules implements one
+ * of the payment method hooks.
+ *
+ * @see commerce_adhoc_payment_modules_disabled()
+ */
+function commerce_adhoc_payment_modules_enabled($modules) {
+  commerce_adhoc_payment_modules_disabled($modules);
+}
+
+/**
+ * Implements hook_modules_disabled().
+ *
+ * Clears the payment method cache in case ony of the modules implemented one
+ * of the payment method hooks.
+ */
+function commerce_adhoc_payment_modules_disabled($modules) {
+  cache_clear_all('commerce_adhoc_payment:payment_methods', 'cache');
+}
+
+/**
+ * Retrieves the available ad hoc payment methods.
+ *
+ * @return array
+ *   Array of payment methods available for an ad hoc payment and their details.
+ *
+ * @todo Add a UI so that site builders can do this without a hook
+ * implementation.
+ */
+function commerce_adhoc_payment_methods($reset = FALSE) {
+  $cache = cache_get('commerce_adhoc_payment:payment_methods');
+
+  if (!$cache || $reset) {
+    $payment_methods = module_invoke_all('commerce_adhoc_payment_methods');
+    drupal_alter('commerce_adhoc_payment_methods', $payment_methods);
+
+    // Iterate over the payment methods and any required fields and set
+    // default values on each if they are not already.
+    $method_defaults = array('fields' => array());
+    $field_defaults = array('#required' => FALSE);
+    foreach ($payment_methods as &$method) {
+      $method += $method_defaults;
+      foreach ($method['fields'] as &$field) {
+        $field += $field_defaults;
+      }
+    }
+
+    cache_set('commerce_adhoc_payment:payment_methods', $payment_methods);
+  }
+  else {
+    $payment_methods = $cache->data;
+  }
+
+  return $payment_methods;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function commerce_adhoc_payment_form_commerce_payment_order_transaction_add_form_alter(&$form, &$form_state, $form_id) {
+  if (isset($form['payment_terminal'])) {
+    list($payment_method,) = explode('|', $form_state['values']['payment_method']);
+    if ('adhoc' == $payment_method) {
+      $form['payment_terminal']['#element_validate'][] = 'commerce_adhoc_payment_terminal_validate';
+    }
+  }
+}
+
+/**
+ * Validation callback for the payment terminal that will varify that the
+ * payment amount is not a negative number.
+ */
+function commerce_adhoc_payment_terminal_validate($element, &$form_state) {
+  if ($form_state['values']['amount'] < 0) {
+    form_set_error('commerce_payment_amount', t('Payment amount must be a positive value.'));
+  }
+}
